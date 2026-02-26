@@ -4,7 +4,7 @@
 #include "utils/file_reader.h"
 #include <algorithm>
 #include <vector>
-#include <future>
+#include <thread>
 
 namespace logengine
 {
@@ -57,19 +57,20 @@ namespace logengine
 
     // Partition the buffer into exactly num_threads_ slices aligned to newlines
     auto partitions = partition_by_lines(file_buffer, num_threads_);
+    const size_t num_partitions = partitions.size();
 
-    ThreadPool pool(num_threads_);
-    std::vector<std::future<ThreadLocalMetrics>> futures;
+    // Pre-allocate thread-local storage (no dynamic allocation in hot path)
+    std::vector<ThreadLocalMetrics> thread_locals(num_partitions);
+    std::vector<std::thread> workers;
+    workers.reserve(num_partitions);
 
     const auto epoch = std::chrono::system_clock::time_point{};
 
-    // Each thread processes its own partition and writes only to thread-local
-    // state - no shared mutexes or atomics on the hot path.
-    for (auto partition : partitions)
+    // Launch one thread per partition - NO shared queue, NO mutex, NO futex
+    for (size_t i = 0; i < num_partitions; i++)
     {
-      futures.push_back(pool.enqueue([partition, epoch]()
-                                     {
-        ThreadLocalMetrics local;
+      workers.emplace_back([&local = thread_locals[i], partition = partitions[i], epoch]()
+      {
         Parser parser;
 
         const char *data = partition.data();
@@ -110,15 +111,20 @@ namespace logengine
         // Handle last line if partition has no trailing newline
         if (start < size)
           process_line({data + start, size - start});
+      });
+    }
 
-        return local; }));
+    // Join all workers (no futex contention - threads simply finish)
+    for (auto &worker : workers)
+    {
+      worker.join();
     }
 
     // Single-threaded merge phase: aggregate all thread-local results
     Aggregator final_agg;
-    for (auto &fut : futures)
+    for (const auto &local : thread_locals)
     {
-      final_agg.merge_thread_local(fut.get());
+      final_agg.merge_thread_local(local);
     }
 
     return final_agg.get_metrics();

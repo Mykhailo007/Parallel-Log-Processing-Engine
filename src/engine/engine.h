@@ -1,5 +1,4 @@
 #pragma once
-#include "thread_pool.h"
 #include "aggregator/metrics.h"
 #include "aggregator/aggregator.h"
 #include <string>
