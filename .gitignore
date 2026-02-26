@@ -1,0 +1,12 @@
+build/
+*.log
+*.json
+.vscode/
+.idea/
+cmake-build-*/
+*.o
+*.a
+logengine
+logengine_tests
+perf.data
+perf.data.old
