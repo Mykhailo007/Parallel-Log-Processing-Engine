@@ -64,4 +64,35 @@ namespace logengine
     return std::chrono::system_clock::time_point(minutes);
   }
 
+  uint64_t Aggregator::time_point_to_minute_bucket(
+      const std::chrono::system_clock::time_point &tp)
+  {
+    auto minutes = std::chrono::duration_cast<std::chrono::minutes>(
+        tp.time_since_epoch());
+    return static_cast<uint64_t>(minutes.count());
+  }
+
+  void Aggregator::merge_thread_local(const ThreadLocalMetrics &local)
+  {
+    total_lines_ += local.local_total_lines;
+    error_count_ += local.local_error_count;
+
+    for (const auto &[endpoint, count] : local.local_requests_per_endpoint)
+    {
+      endpoint_counts_[endpoint] += count;
+    }
+
+    latencies_.insert(latencies_.end(),
+                      local.local_latencies.begin(),
+                      local.local_latencies.end());
+
+    // Convert integer minute buckets back to time_points for the final map
+    for (const auto &[bucket, count] : local.local_time_windows)
+    {
+      auto tp = std::chrono::system_clock::time_point(
+          std::chrono::minutes(static_cast<int64_t>(bucket)));
+      time_windows_[tp] += count;
+    }
+  }
+
 } // namespace logengine
