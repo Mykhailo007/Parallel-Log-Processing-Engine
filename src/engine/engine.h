@@ -1,7 +1,9 @@
 #pragma once
 #include "thread_pool.h"
 #include "aggregator/metrics.h"
+#include "aggregator/aggregator.h"
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace logengine
@@ -16,15 +18,11 @@ namespace logengine
 
   private:
     size_t num_threads_;
-    static constexpr size_t CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
-    struct Chunk
-    {
-      std::string data;
-      size_t offset;
-    };
-
-    std::vector<Chunk> split_into_chunks(const std::string &file_path);
+    // Divide buffer into (at most) num_parts partitions aligned to newline boundaries.
+    // Each returned string_view is a view into buffer - buffer must outlive the views.
+    static std::vector<std::string_view> partition_by_lines(
+        const std::string &buffer, size_t num_parts);
   };
 
 } // namespace logengine
